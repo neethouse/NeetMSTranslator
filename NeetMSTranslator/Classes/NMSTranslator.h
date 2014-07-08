@@ -50,6 +50,6 @@
 - (void)transrateWithText:(NSString *)text
                        to:(NSString *)toLang
                   success:(void (^)(NSHTTPURLResponse *response, NSString *string))success
-                  failure:(void (^)(NSHTTPURLResponse *response, NSError *error))failure;
+                  failure:(void (^)(NSHTTPURLResponse *response, NSData *data, NSError *error))failure;
 
 @end

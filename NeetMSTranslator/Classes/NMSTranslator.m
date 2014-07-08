@@ -8,7 +8,8 @@
 
 #import "NMSTranslator.h"
 
-#import <AFNetworking.h>
+#import "NSDictionary+HttpArguments.h"
+#import "NSRegularExpression+TranslateResponseParser.h"
 
 #define kAuthURL @"https://datamarket.accesscontrol.windows.net/v2/OAuth2-13"
 #define kTranslateAPIURL @"http://api.microsofttranslator.com/V2/Http.svc/Translate"
@@ -18,6 +19,8 @@
 @property (nonatomic) NSString *clientID;
 
 @property (nonatomic) NSString *clientSecret;
+
+@property (readonly, nonatomic) NSOperationQueue *queue;
 
 @end
 
@@ -36,23 +39,13 @@
     return translator;
 }
 
-+ (NSRegularExpression *)regexForTranslateResponse {
-    
-    static NSRegularExpression *regex;
-    
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        
-        NSError *error = nil;
-        
-        regex = [NSRegularExpression regularExpressionWithPattern:@"^<string .+>(.*)</string>$"
-                                                          options:0
-                                                            error:&error];
-        
-        assert(error == nil);
-    });
-    
-    return regex;
+- (id)init {
+    self = [super init];
+    if (self) {
+        _queue = [NSOperationQueue.alloc init];
+        _queue.maxConcurrentOperationCount = 1;
+    }
+    return self;
 }
 
 - (void)initializeTranslatorWithClientID:(NSString *)clientID clientSecret:(NSString *)clientSecret {
@@ -64,71 +57,116 @@
 - (void)transrateWithText:(NSString *)text
                        to:(NSString *)toLang
                   success:(void (^)(NSHTTPURLResponse *, NSString *))success
-                  failure:(void (^)(NSHTTPURLResponse *, NSError *))failure {
+                  failure:(void (^)(NSHTTPURLResponse *, NSData *, NSError *))failure {
     
     NSAssert(self.clientID != nil, @"clientID is nil. Call initializeTranslatorWithClientID:clientSecret");
     NSAssert(self.clientSecret != nil, @"clientSecret is nil. Call initializeTranslatorWithClientID:clientSecret");
     
-    AFHTTPClient *client = [AFHTTPClient clientWithBaseURL:[NSURL URLWithString:@""]];
-    
-    NSDictionary *authParams = @{@"client_id": self.clientID,
-                                 @"client_secret": self.clientSecret,
-                                 @"scope": @"http://api.microsofttranslator.com",
-                                 @"grant_type": @"client_credentials",
-                                 };
-    
-    [client postPath:kAuthURL parameters:authParams success:^(AFHTTPRequestOperation *operation, id responseObject) {
+    [NSURLConnection sendAsynchronousRequest:self.authRequest queue:self.queue completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         
-        NSError *error = nil;
+        NSHTTPURLResponse *urlResponse = [self.class urlResponseFromURLResponse:response];
         
-        NSDictionary *jsonDict = [NSJSONSerialization JSONObjectWithData:operation.responseData
-                                                                 options:kNilOptions
-                                                                   error:&error];
-        NSString *accessToken = jsonDict[@"access_token"];
-        
-        if (error || accessToken == nil) {
+        if (connectionError || urlResponse.statusCode != 200) {
             
             if (failure) {
-                failure(operation.response, error);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    failure(urlResponse, data, connectionError);
+                });
             }
-            
             return;
         }
         
-        NSDictionary *transParam = @{@"text": text,
-                                     @"to": toLang,
-                                     };
+        NSError *jsonError = nil;
         
-        NSString *authorization = [@"Bearer " stringByAppendingString:accessToken];
+        NSDictionary *jsonDict = [NSJSONSerialization JSONObjectWithData:data
+                                                                 options:kNilOptions
+                                                                   error:&jsonError];
         
-        [client setDefaultHeader:@"Authorization" value:authorization];
+        NSString *accessToken = jsonDict[@"access_token"];
         
-        [client getPath:kTranslateAPIURL parameters:transParam success:^(AFHTTPRequestOperation *operation, id responseObject) {
-            
-            NSString *response = operation.responseString;
-            
-            NSString *str = [self.class.regexForTranslateResponse stringByReplacingMatchesInString:response
-                                                                                           options:0
-                                                                                             range:NSMakeRange(0, response.length)
-                                                                                      withTemplate:@"$1"];
-            
-            if (success) {
-                success(operation.response, str);
-            }
-            
-        } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
+        if (jsonError || accessToken == nil) {
             
             if (failure) {
-                failure(operation.response, error);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    failure(urlResponse, data, connectionError);
+                });
+            }
+            return;
+        }
+        
+        NSURLRequest *translateReq = [self translateRequestWithText:text to:toLang accessToken:accessToken];
+        
+        [NSURLConnection sendAsynchronousRequest:translateReq queue:self.queue completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
+            
+            NSHTTPURLResponse *urlResponse = [self.class urlResponseFromURLResponse:response];
+            
+            if (connectionError || urlResponse.statusCode != 200) {
+                
+                if (failure) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        failure(urlResponse, data, connectionError);
+                    });
+                }
+                return;
+            }
+            
+            NSString *xmlString = [NSString.alloc initWithData:data encoding:NSUTF8StringEncoding];
+            
+            NSString *translatedString = [NSRegularExpression.nms_regexForTranslateResponse stringByReplacingMatchesInString:xmlString
+                                                                                                                     options:0
+                                                                                                                       range:NSMakeRange(0, xmlString.length)
+                                                                                                                withTemplate:@"$1"];
+            
+            if (success) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    success(urlResponse, translatedString);
+                });
             }
         }];
-        
-    } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
-        
-        if (failure) {
-            failure(operation.response, error);
-        }
     }];
+}
+
+#pragma mark - Utils
+
++ (NSHTTPURLResponse *)urlResponseFromURLResponse:(NSURLResponse *)response {
+    
+    NSHTTPURLResponse *result = nil;
+    
+    if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+        result = (NSHTTPURLResponse *)response;
+    }
+    
+    NSAssert(result != nil, nil);
+    
+    return result;
+}
+
+- (NSURLRequest *)authRequest {
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest.alloc initWithURL:[NSURL URLWithString:kAuthURL]];
+    
+    request.HTTPMethod = @"POST";
+    request.HTTPBody = [@{@"client_id": self.clientID,
+                          @"client_secret": self.clientSecret,
+                          @"scope": @"http://api.microsofttranslator.com",
+                          @"grant_type": @"client_credentials",
+                          }.nms_httpQueryString dataUsingEncoding:NSUTF8StringEncoding];
+    
+    return request;
+}
+
+- (NSURLRequest *)translateRequestWithText:(NSString *)text to:(NSString *)toLang accessToken:(NSString *)accessToken {
+    
+    NSString *query = @{@"text": text,
+                        @"to": toLang,
+                        }.nms_httpQueryString;
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest.alloc initWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"%@?%@", kTranslateAPIURL, query]]];
+    
+    NSString *authorization = [@"Bearer " stringByAppendingString:accessToken];
+    [request setValue:authorization forHTTPHeaderField:@"Authorization"];
+    
+    return request;
 }
 
 @end

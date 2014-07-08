@@ -3,6 +3,14 @@ NeetMSTranslator
 
 Microsoft Translator for iOS
 
+### Haw to Install
+
+use cocoapods
+
+`pod 'NeetMSTranslator', '~>0.0.3`
+
+### How to Use
+
  ```obj-c
 
  NMSTranslator *tra = [NMSTranslator sharedTranslator];
@@ -14,10 +22,11 @@ Microsoft Translator for iOS
 
      NSLog(@"succ: %@", string); // こんにちわ
 
- } failure:^(NSHTTPURLResponse *response, NSError *error) {
+ } failure:^(NSHTTPURLResponse *response, NSData *data, NSError *error) {
 
      NSLog(@"err: %@", error);
  }];
 
  ```
+
 

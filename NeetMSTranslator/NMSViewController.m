@@ -44,10 +44,18 @@
             
             sender.userInteractionEnabled = YES;
             
-        } failure:^(NSHTTPURLResponse *response, NSError *error) {
+        } failure:^(NSHTTPURLResponse *response, NSData *data, NSError *error) {
             
-            _outputTextView.text = error.localizedDescription;
-            
+            if (error) {
+                
+                _outputTextView.text = error.localizedDescription;
+                
+            } else {
+                
+                if (data) {
+                    _outputTextView.text = [NSString.alloc initWithData:data encoding:NSUTF8StringEncoding];
+                }
+            }
             sender.userInteractionEnabled = YES;
         }];
     }
