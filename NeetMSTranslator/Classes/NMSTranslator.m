@@ -12,7 +12,7 @@
 #import "NSRegularExpression+TranslateResponseParser.h"
 
 #define kAuthURL @"https://datamarket.accesscontrol.windows.net/v2/OAuth2-13"
-#define kTranslateAPIURL @"http://api.microsofttranslator.com/V2/Http.svc/Translate"
+#define kTranslateAPIURL @"https://api.microsofttranslator.com/V2/Http.svc/Translate"
 
 @interface NMSTranslator ()
 
