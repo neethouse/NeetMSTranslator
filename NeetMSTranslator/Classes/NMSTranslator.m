@@ -136,8 +136,6 @@
         result = (NSHTTPURLResponse *)response;
     }
     
-    NSAssert(result != nil, nil);
-    
     return result;
 }
 
