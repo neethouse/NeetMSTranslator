@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
 
   s.name         = "NeetMSTranslator"
-  s.version      = "0.0.3"
+  s.version      = "0.0.4"
   s.summary      = "Microsoft Translator for iOS"
 
   s.description  = <<-DESC
@@ -35,7 +35,7 @@ Pod::Spec.new do |s|
 
   s.platform     = :ios, "6.0"
 
-  s.source       = { :git => "https://github.com/neethouse/NeetMSTranslator.git", :tag => "0.0.3" }
+  s.source       = { :git => "https://github.com/neethouse/NeetMSTranslator.git", :tag => "0.0.4" }
 
   s.source_files  = "NeetMSTranslator/Classes/*.{h,m}"
 
